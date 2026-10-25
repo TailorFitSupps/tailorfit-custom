@@ -1,0 +1,14 @@
+# Annotations-only, non-blocking Impeccable detector on PRs.
+# This repo has no src/; the custom builder script lives at the root.
+name: impeccable
+on: [pull_request]
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: Impeccable detector
+        continue-on-error: true
+        run: npx --yes impeccable detect --github --no-advisory custom-supplement.js
