@@ -3,7 +3,7 @@
   "hooks": {
     "preToolUse": [
       {
-        "command": "\".cursor/skills/impeccable/scripts/impeccable\" hook-before-edit",
+        "command": "[ ! -f \".cursor/skills/impeccable/scripts/impeccable\" ] || \".cursor/skills/impeccable/scripts/impeccable\" hook-before-edit",
         "timeout": 5
       }
     ]

@@ -21,3 +21,6 @@
 **/.impeccable/live/deferred-svelte-component-accepts.json
 **/.impeccable/live/*.png
 # impeccable-ignore-end
+
+# Impeccable engine binary: launcher downloads + sha256-verifies it into ~/.impeccable/bin/<version>/
+.cursor/skills/impeccable/scripts/bin/

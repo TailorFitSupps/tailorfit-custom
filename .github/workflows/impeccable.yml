@@ -2,13 +2,23 @@
 # This repo has no src/; the custom builder script lives at the root.
 name: impeccable
 on: [pull_request]
+permissions:
+  contents: read
 jobs:
   detect:
     runs-on: ubuntu-latest
+    env:
+      DO_NOT_TRACK: "1"
     steps:
       - uses: actions/checkout@v4
+        with: { persist-credentials: false }
       - uses: actions/setup-node@v4
         with: { node-version: 20 }
       - name: Impeccable detector
         continue-on-error: true
-        run: npx --yes impeccable detect --github --no-advisory custom-supplement.js
+        run: |
+          set +e
+          npx --yes impeccable@4.7.0 detect --json --no-advisory custom-supplement.js > impeccable.json
+          code=$?
+          jq -r '.[] | "::warning file=\(.file | sub("^"+env.GITHUB_WORKSPACE+"/";"")),line=\(.line),title=impeccable \(.antipattern)::\(.snippet) — \(.name)"' impeccable.json || true
+          exit $code
