@@ -15,6 +15,9 @@ const FOXY_PORTAL_SETTINGS_URL = 'https://tailorfit.foxycart.com/customer_portal
 const FOXY_PORTAL_BASE_URL = 'https://tailorfit.foxycart.com/s/customer/';
 const FOXY_SSO_FUNCTION_URL = 'https://userpresets.netlify.app/.netlify/functions/foxy-sso';
 const FOXY_LAST_ORDER_FUNCTION_URL = 'https://userpresets.netlify.app/.netlify/functions/foxy-last-order';
+// HMAC cart signing (secret stays on Netlify). Falls back to unsigned links if unavailable.
+const FOXY_SIGN_CART_FUNCTION_URL = 'https://userpresets.netlify.app/.netlify/functions/foxy-sign-cart';
+const FOXY_CART_URL = 'https://tailorfit.foxycart.com/cart';
 
 const SERVINGS = 30; // servings per tub: converts per-serving dosage -> total weight
 
@@ -1061,13 +1064,54 @@ function renderTaste(){
   $id('tasteBars').innerHTML=Object.keys(colors).map(label=>{ const v=tot[keys[label]], pct=Math.round((v/maxv)*100); return `<div class="t-row"><span class="tl">${label}</span><div class="t-bar"><span style="width:${pct}%;background:${colors[label]}"></span></div></div>`; }).join('');
 }
 
-/* ---------- cart (same Foxy URL the old builder produced) ---------- */
-function addToCart(){
-  if(selected.length<3 || !flavor){ toast(selected.length<3?'Add at least 3 ingredients':'Choose a flavor'); return; }
+/* ---------- cart (HMAC-signed via userpresets Netlify; unsigned fallback) ---------- */
+function buildCartParams(){
   const price=(calcPrice(pricedItems())+flavorPrice()).toFixed(2);
-  let url=`https://tailorfit.foxycart.com/cart?cart=add&name=${encodeURIComponent('Custom')}&price=${price}&quantity=1&item_category=${encodeURIComponent('Default for all products')}`;
-  selected.forEach((s,i)=>{ url+=`&Ingredient${i+1}=${encodeURIComponent(`${s.name} - ${fmtDose(s.dosage)}`)}`; });
-  url+=`&Flavor=${encodeURIComponent(flavor)}`;
+  const params={
+    cart:'add',
+    name:'Custom',
+    price,
+    quantity:'1',
+    item_category:'Default for all products',
+  };
+  selected.forEach((s,i)=>{ params[`Ingredient${i+1}`]=`${s.name} - ${fmtDose(s.dosage)}`; });
+  params.Flavor=flavor;
+  return params;
+}
+
+function buildUnsignedCartUrl(params){
+  const q=Object.entries(params).map(([k,v])=>`${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
+  return `${FOXY_CART_URL}?${q}`;
+}
+
+async function fetchSignedCartUrl(params){
+  // `code` is required for Foxy HMAC; default matches server-side DEFAULT_PRODUCT_CODE.
+  // Unsigned fallback omits code so today's cart view stays unchanged if signing is down.
+  const signedParams={...params,code:params.code||'custom'};
+  const res=await fetch(FOXY_SIGN_CART_FUNCTION_URL,{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({params:signedParams,cartUrl:FOXY_CART_URL}),
+  });
+  if(!res.ok) throw new Error(`sign-cart HTTP ${res.status}`);
+  const data=await res.json();
+  if(!data?.success || !data?.url) throw new Error(data?.error || 'sign-cart failed');
+  return data.url;
+}
+
+async function addToCart(){
+  if(selected.length<3 || !flavor){ toast(selected.length<3?'Add at least 3 ingredients':'Choose a flavor'); return; }
+  const btn=$id('addCart');
+  if(btn) btn.disabled=true;
+  const params=buildCartParams();
+  let url=buildUnsignedCartUrl(params);
+  try{
+    url=await fetchSignedCartUrl(params);
+  }catch(err){
+    // Signing is best-effort until FOXY_API_KEY is set and the function is deployed.
+    // Keep unsigned fallback so cart still works while tampering prevention stays OFF.
+    console.warn('HMAC cart signing unavailable; using unsigned cart link', err);
+  }
   window.location.href=url;
 }
 
