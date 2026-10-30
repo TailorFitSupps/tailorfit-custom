@@ -18,6 +18,12 @@ const FOXY_LAST_ORDER_FUNCTION_URL = 'https://userpresets.netlify.app/.netlify/f
 
 const SERVINGS = 30; // servings per tub: converts per-serving dosage -> total weight
 
+// Cart line identity for custom builds. Customer-facing only — never encode
+// ingredient CMS categories (Energy & Focus, etc.) or Foxy shipping-category
+// names into name/code. item_category stays for shipping rules, not display identity.
+const CART_PRODUCT_CODE = 'tf-custom';
+const CART_PRODUCT_NAME_BASE = 'Custom Blend';
+
 const pricing = {
   base: 15,
   rarity: { low: 2.5, mid: 2.0, high: 1.75, premium: 1.5 },
@@ -761,9 +767,7 @@ function loadLastOrder() {
         .then(data => {
           if (!data.success) { console.error("Last order error:", data.error); alert("Sorry, we couldn't load your last order."); return; }
           if (!data.found)   { alert("We couldn't find a previous order on your account."); return; }
-          const customItem = (data.order.items || []).find(it =>
-            it.name === "Custom" || (it.options || []).some(o => /^Ingredient\d+$/i.test(o.name))
-          );
+          const customItem = (data.order.items || []).find(it => isCustomCartItem(it));
           if (!customItem) {
             alert("Your last order was one of our ready-made blends — you can re-order it from the Shop.");
             return;
@@ -1061,11 +1065,30 @@ function renderTaste(){
   $id('tasteBars').innerHTML=Object.keys(colors).map(label=>{ const v=tot[keys[label]], pct=Math.round((v/maxv)*100); return `<div class="t-row"><span class="tl">${label}</span><div class="t-bar"><span style="width:${pct}%;background:${colors[label]}"></span></div></div>`; }).join('');
 }
 
-/* ---------- cart (same Foxy URL the old builder produced) ---------- */
+/* ---------- cart product identity (name + code only; no category leakage) ---------- */
+function cartProductName(){
+  // Flavor is customer-chosen product context, not an internal CMS category.
+  return flavor ? `${CART_PRODUCT_NAME_BASE} · ${flavor}` : CART_PRODUCT_NAME_BASE;
+}
+function cartProductCode(){ return CART_PRODUCT_CODE; }
+function isCustomCartItem(it){
+  if(!it) return false;
+  // Ingredient options are the durable signal (works for legacy "Custom" orders too).
+  if((it.options||[]).some(o=>/^Ingredient\d+$/i.test(o.name))) return true;
+  if(it.code && String(it.code).toLowerCase()===CART_PRODUCT_CODE) return true;
+  const n=String(it.name||'');
+  return n==='Custom' || n===CART_PRODUCT_NAME_BASE || n.startsWith(CART_PRODUCT_NAME_BASE+' · ');
+}
+
+/* ---------- cart (same Foxy URL the old builder produced, with meaningful name/code) ---------- */
 function addToCart(){
   if(selected.length<3 || !flavor){ toast(selected.length<3?'Add at least 3 ingredients':'Choose a flavor'); return; }
   const price=(calcPrice(pricedItems())+flavorPrice()).toFixed(2);
-  let url=`https://tailorfit.foxycart.com/cart?cart=add&name=${encodeURIComponent('Custom')}&price=${price}&quantity=1&item_category=${encodeURIComponent('Default for all products')}`;
+  const name=cartProductName();
+  const code=cartProductCode();
+  // Only name + code change vs prior cart URL. item_category remains the Foxy
+  // shipping category (not product identity) and is unchanged for checkout/labels.
+  let url=`https://tailorfit.foxycart.com/cart?cart=add&name=${encodeURIComponent(name)}&code=${encodeURIComponent(code)}&price=${price}&quantity=1&item_category=${encodeURIComponent('Default for all products')}`;
   selected.forEach((s,i)=>{ url+=`&Ingredient${i+1}=${encodeURIComponent(`${s.name} - ${fmtDose(s.dosage)}`)}`; });
   url+=`&Flavor=${encodeURIComponent(flavor)}`;
   window.location.href=url;
