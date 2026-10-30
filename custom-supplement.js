@@ -23,6 +23,13 @@ const GRAMS_PER_LB = 453.59237; // Foxy weight_uom is LBS
 /** Empty pouch/tub + label (grams). Placeholder — Bret still needs to confirm the real empty-container weight. */
 const PACKAGING_GRAMS = 21;
 
+// Cart line identity for custom builds. Customer-facing only — never encode
+// ingredient CMS categories (Energy & Focus, etc.) into name/code.
+// Do not send item_category (Foxy treats it as a visible custom option).
+// Shipping falls to Foxy DEFAULT. Product code must stay in sync with HMAC #4.
+const CART_PRODUCT_CODE = 'tf-custom';
+const CART_PRODUCT_NAME_BASE = 'Custom Blend';
+
 const pricing = {
   base: 15,
   rarity: { low: 2.5, mid: 2.0, high: 1.75, premium: 1.5 },
@@ -766,9 +773,7 @@ function loadLastOrder() {
         .then(data => {
           if (!data.success) { console.error("Last order error:", data.error); alert("Sorry, we couldn't load your last order."); return; }
           if (!data.found)   { alert("We couldn't find a previous order on your account."); return; }
-          const customItem = (data.order.items || []).find(it =>
-            it.name === "Custom" || (it.options || []).some(o => /^Ingredient\d+$/i.test(o.name))
-          );
+          const customItem = (data.order.items || []).find(it => isCustomCartItem(it));
           if (!customItem) {
             alert("Your last order was one of our ready-made blends — you can re-order it from the Shop.");
             return;
@@ -1128,12 +1133,32 @@ function renderTaste(){
   $id('tasteBars').innerHTML=Object.keys(colors).map(label=>{ const v=tot[keys[label]], pct=Math.round((v/maxv)*100); return `<div class="t-row"><span class="tl">${label}</span><div class="t-bar"><span style="width:${pct}%;background:${colors[label]}"></span></div></div>`; }).join('');
 }
 
-/* ---------- cart (same Foxy URL the old builder produced, plus real weight) ---------- */
+/* ---------- cart product identity (name + code; no item_category option) ---------- */
+function cartProductName(){
+  // Flavor is customer-chosen product context, not an internal CMS category.
+  return flavor ? `${CART_PRODUCT_NAME_BASE} · ${flavor}` : CART_PRODUCT_NAME_BASE;
+}
+function cartProductCode(){ return CART_PRODUCT_CODE; }
+function isCustomCartItem(it){
+  if(!it) return false;
+  // Ingredient options are the durable signal (works for legacy "Custom" orders too).
+  if((it.options||[]).some(o=>/^Ingredient\d+$/i.test(o.name))) return true;
+  if(it.code && String(it.code).toLowerCase()===CART_PRODUCT_CODE) return true;
+  const n=String(it.name||'');
+  return n==='Custom' || n===CART_PRODUCT_NAME_BASE || n.startsWith(CART_PRODUCT_NAME_BASE+' · ');
+}
+
+/* ---------- cart (name/code from #6 + weight from #5; no item_category) ---------- */
 function addToCart(){
   if(selected.length<3 || !flavor){ toast(selected.length<3?'Add at least 3 ingredients':'Choose a flavor'); return; }
   const price=(calcPrice(pricedItems())+flavorPrice()).toFixed(2);
+  const name=cartProductName();
+  const code=cartProductCode();
   const weight=cartWeightLb();
-  let url=`https://tailorfit.foxycart.com/cart?cart=add&name=${encodeURIComponent('Custom')}&price=${price}&weight=${weight}&quantity=1&item_category=${encodeURIComponent('Default for all products')}`;
+  // Omit item_category: Foxy treats it as a visible custom option ("item category:
+  // Default for all products"). Do not send category=Default for all products either
+  // (invalid code). Shipping falls to Foxy DEFAULT, same as today.
+  let url=`https://tailorfit.foxycart.com/cart?cart=add&name=${encodeURIComponent(name)}&code=${encodeURIComponent(code)}&price=${price}&weight=${weight}&quantity=1`;
   selected.forEach((s,i)=>{ url+=`&Ingredient${i+1}=${encodeURIComponent(`${s.name} - ${fmtDose(s.dosage)}`)}`; });
   url+=`&Flavor=${encodeURIComponent(flavor)}`;
   window.location.href=url;
