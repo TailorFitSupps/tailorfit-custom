@@ -18,9 +18,9 @@ const FOXY_PORTAL_BASE_URL = 'https://tailorfit.foxycart.com/s/customer/';
 const FOXY_SSO_FUNCTION_URL = 'https://userpresets.netlify.app/.netlify/functions/foxy-sso';
 const FOXY_LAST_ORDER_FUNCTION_URL = 'https://userpresets.netlify.app/.netlify/functions/foxy-last-order';
 
-const SERVINGS = 30; // servings per tub: converts per-serving dosage -> total weight
+const SERVINGS = 30; // servings per tub: converts per-serving dosage -> total powder weight
 const GRAMS_PER_LB = 453.59237; // Foxy weight_uom is LBS
-// Empty pouch/tub + label. Calibrated so a ~25 g/serving blend (750 g net) ships ≈ 1.7 lb.
+/** Empty pouch/tub + label (grams). Placeholder — Bret still needs to confirm the real empty-container weight. */
 const PACKAGING_GRAMS = 21;
 
 const pricing = {
@@ -900,9 +900,17 @@ function flavorPrice(){ const f=FLAVORS.find(x=>x.name===flavor); return f ? f.p
 function calcCalories(){ let t=0; selected.forEach(s=>{ const ing=byName[s.name]; if(ing) t+=s.dosage*(ing.cal||0); }); const f=FLAVORS.find(x=>x.name===flavor); if(f) t+=f.cal||0; return Math.round(t); }
 function servingSize(){ let w=selected.reduce((a,s)=>a+(s.dosage||0),0); const f=FLAVORS.find(x=>x.name===flavor); if(f) w+=f.weight||0; return w; }
 
-/** Shipping weight in pounds for Foxy: (serving grams × 30) + packaging. */
+/**
+ * Shipping weight in pounds for Foxy.
+ * Fill varies by blend (no fixed tub/fill target):
+ *   powder_g = (sum of selected ingredient g/serving + flavor powder g) × SERVINGS
+ *   weight_lb = (powder_g + PACKAGING_GRAMS) / GRAMS_PER_LB
+ */
 function cartWeightLb(){
-  const powderGrams = servingSize() * SERVINGS;
+  const ingredientGrams = selected.reduce((a,s)=>a+(s.dosage||0),0);
+  const f = FLAVORS.find(x=>x.name===flavor);
+  const flavorGrams = f ? (f.weight||0) : 0;
+  const powderGrams = (ingredientGrams + flavorGrams) * SERVINGS;
   const totalGrams = powderGrams + PACKAGING_GRAMS;
   // Foxy accepts up to three decimal places.
   return Math.round((totalGrams / GRAMS_PER_LB) * 1000) / 1000;
