@@ -23,7 +23,11 @@ const FOXY_CART_URL = 'https://tailorfit.foxycart.com/cart';
 
 const SERVINGS = 30; // servings per tub: converts per-serving dosage -> total powder weight
 const GRAMS_PER_LB = 453.59237; // Foxy weight_uom is LBS
-/** Empty pouch/tub + label (grams). Placeholder — Bret still needs to confirm the real empty-container weight. */
+/**
+ * Empty pouch/tub + label (grams). Placeholder — Bret still needs to confirm the real empty-container weight.
+ * SYNC: must match UserPresets `netlify/functions/foxy-sign-cart.js` PACKAGING_GRAMS (dual copy; no shared package).
+ * See tests/PACKAGING_GRAMS.sync.md in both repos. Change both in the same release / tag+function deploy.
+ */
 const PACKAGING_GRAMS = 21;
 
 // Cart line identity for custom builds. Customer-facing only — never encode

@@ -1,0 +1,47 @@
+{
+  "syncNote": "BYTE-IDENTICAL copy required in tailorfit-custom/tests/golden-cart-price-vectors.json. Pricing formula + PACKAGING_GRAMS=21 must match both repos.",
+  "packagingGrams": 21,
+  "servings": 30,
+  "gramsPerLb": 453.59237,
+  "pricing": {
+    "base": 15,
+    "rarity": { "low": 2.5, "mid": 2.0, "high": 1.75, "premium": 1.5 },
+    "volume": { "max": 0.38, "base": 0.15, "steepness": 0.08 }
+  },
+  "formatPriceHalfCentTies": [
+    { "amount": 0.015, "expected": "0.02" },
+    { "amount": 2.675, "expected": "2.68" },
+    { "amount": 35.455, "expected": "35.46" }
+  ],
+  "builds": [
+    {
+      "id": "endurance-pre-mango-cms-mins",
+      "flavor": { "name": "Mango", "price": 0, "weight": 3.6 },
+      "ingredients": [
+        { "name": "Dextrose", "dosage": 6, "costPerGram": 0.01 },
+        { "name": "Citrulline Malate", "dosage": 6, "costPerGram": 0.02 },
+        { "name": "Beta-alanine", "dosage": 4, "costPerGram": 0.027 },
+        { "name": "Glycerol", "dosage": 3, "costPerGram": 0.01 },
+        { "name": "Taurine", "dosage": 1.5, "costPerGram": 0.026 },
+        { "name": "L-Tyrosine", "dosage": 1.5, "costPerGram": 0.036 },
+        { "name": "Caffeine", "dosage": 0.25, "costPerGram": 0.02 },
+        { "name": "Coconut Water Powder", "dosage": 2.5, "costPerGram": 0.02 },
+        { "name": "Ancient Sea Salt", "dosage": 0.5, "costPerGram": 0.01 },
+        { "name": "Magnesium Citrate", "dosage": 1.5, "costPerGram": 0.028 }
+      ],
+      "expectedPrice": "38.35",
+      "expectedWeightLb": 2.054
+    },
+    {
+      "id": "minimal-three-mango",
+      "flavor": { "name": "Mango", "price": 0, "weight": 3.6 },
+      "ingredients": [
+        { "name": "Caffeine", "dosage": 0.2, "costPerGram": 0.02 },
+        { "name": "Taurine", "dosage": 1, "costPerGram": 0.026 },
+        { "name": "Dextrose", "dosage": 6, "costPerGram": 0.01 }
+      ],
+      "expectedPrice": "19.63",
+      "expectedWeightLb": 0.761
+    }
+  ]
+}
