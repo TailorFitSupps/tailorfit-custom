@@ -18,7 +18,10 @@ const FOXY_PORTAL_BASE_URL = 'https://tailorfit.foxycart.com/s/customer/';
 const FOXY_SSO_FUNCTION_URL = 'https://userpresets.netlify.app/.netlify/functions/foxy-sso';
 const FOXY_LAST_ORDER_FUNCTION_URL = 'https://userpresets.netlify.app/.netlify/functions/foxy-last-order';
 
-const SERVINGS = 30; // servings per tub: converts per-serving dosage -> total weight
+const SERVINGS = 30; // servings per tub: converts per-serving dosage -> total powder weight
+const GRAMS_PER_LB = 453.59237; // Foxy weight_uom is LBS
+/** Empty pouch/tub + label (grams). Placeholder — Bret still needs to confirm the real empty-container weight. */
+const PACKAGING_GRAMS = 21;
 
 const pricing = {
   base: 15,
@@ -897,6 +900,22 @@ function flavorPrice(){ const f=FLAVORS.find(x=>x.name===flavor); return f ? f.p
 function calcCalories(){ let t=0; selected.forEach(s=>{ const ing=byName[s.name]; if(ing) t+=s.dosage*(ing.cal||0); }); const f=FLAVORS.find(x=>x.name===flavor); if(f) t+=f.cal||0; return Math.round(t); }
 function servingSize(){ let w=selected.reduce((a,s)=>a+(s.dosage||0),0); const f=FLAVORS.find(x=>x.name===flavor); if(f) w+=f.weight||0; return w; }
 
+/**
+ * Shipping weight in pounds for Foxy.
+ * Fill varies by blend (no fixed tub/fill target):
+ *   powder_g = (sum of selected ingredient g/serving + flavor powder g) × SERVINGS
+ *   weight_lb = (powder_g + PACKAGING_GRAMS) / GRAMS_PER_LB
+ */
+function cartWeightLb(){
+  const ingredientGrams = selected.reduce((a,s)=>a+(s.dosage||0),0);
+  const f = FLAVORS.find(x=>x.name===flavor);
+  const flavorGrams = f ? (f.weight||0) : 0;
+  const powderGrams = (ingredientGrams + flavorGrams) * SERVINGS;
+  const totalGrams = powderGrams + PACKAGING_GRAMS;
+  // Foxy accepts up to three decimal places.
+  return Math.round((totalGrams / GRAMS_PER_LB) * 1000) / 1000;
+}
+
 /* ---------- Mobile UI ---------- */
 function injectPresetCSS(){
   if(document.getElementById('tfp-styles')) return;
@@ -1109,11 +1128,12 @@ function renderTaste(){
   $id('tasteBars').innerHTML=Object.keys(colors).map(label=>{ const v=tot[keys[label]], pct=Math.round((v/maxv)*100); return `<div class="t-row"><span class="tl">${label}</span><div class="t-bar"><span style="width:${pct}%;background:${colors[label]}"></span></div></div>`; }).join('');
 }
 
-/* ---------- cart (same Foxy URL the old builder produced) ---------- */
+/* ---------- cart (same Foxy URL the old builder produced, plus real weight) ---------- */
 function addToCart(){
   if(selected.length<3 || !flavor){ toast(selected.length<3?'Add at least 3 ingredients':'Choose a flavor'); return; }
   const price=(calcPrice(pricedItems())+flavorPrice()).toFixed(2);
-  let url=`https://tailorfit.foxycart.com/cart?cart=add&name=${encodeURIComponent('Custom')}&price=${price}&quantity=1&item_category=${encodeURIComponent('Default for all products')}`;
+  const weight=cartWeightLb();
+  let url=`https://tailorfit.foxycart.com/cart?cart=add&name=${encodeURIComponent('Custom')}&price=${price}&weight=${weight}&quantity=1&item_category=${encodeURIComponent('Default for all products')}`;
   selected.forEach((s,i)=>{ url+=`&Ingredient${i+1}=${encodeURIComponent(`${s.name} - ${fmtDose(s.dosage)}`)}`; });
   url+=`&Flavor=${encodeURIComponent(flavor)}`;
   window.location.href=url;
