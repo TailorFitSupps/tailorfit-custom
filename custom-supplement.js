@@ -3,6 +3,8 @@
  * Readable source-of-truth. Host on GitHub + jsDelivr and reference from Webflow:
  *   <script src="https://cdn.jsdelivr.net/gh/<user>/<repo>@<tag>/custom-supplement.js" defer></script>
  *
+ * v2.1.0: group renames (CAT_ORDER: Specialty Ingredients, Amino Acids, Creatine) and a date-gated California note on the
+ *   Creatine Monohydrate card (preview flag ?tf_ca_guard_test=1). The Ancient Sea Salt 0.3 g slider minimum is a CMS value, not script.
  * Behavior matches the original, with three fixes applied:
  *   1. The "Choose a Flavor" <option> string is now a backtick template (was a broken split string).
  *   2. The add-to-cart click handler no longer shadows the element map (`e` -> `ev`).
@@ -800,7 +802,52 @@ let flavor = null;               // flavor name
 let INGREDIENTS = [], FLAVORS = [], PRESETS = [], byName = {};
 let activeFilter = 'all', search = '';
 const presetCache = new Map();   // slug -> [ingredient names]
-const CAT_ORDER = ["Energy & Focus","Pumps & Performance","Strength & Aminos","Hydration & Electrolytes","Recovery & Sleep","Vitamins & Minerals","Carbs & Extras"];
+const CAT_ORDER = ["Energy & Focus","Specialty Ingredients","Amino Acids","Creatine","Hydration & Electrolytes","Recovery & Sleep","Vitamins & Minerals","Carbs & Extras"];
+
+/* ---------- California creatine card note (v2.1.0) ----------
+ * Shows CA_NOTE_TEXT on the Creatine Monohydrate card from 2027-01-01T08:00:00Z (midnight Pacific, Jan 1 2027).
+ * Preview before that date: open /custom-supplement?tf_ca_guard_test=1 (flag lasts 24 h in THAT browser only, localStorage with
+ * cookie fallback, same key/expiry rules as the Foxy checkout guard); ?tf_ca_guard_test=0 clears it. While the flag is on and the
+ * date has not been reached, a separate "TEST MODE" tag sits above the note (outside the note text).
+ * Any error means the flag is off: before the date nothing shows, after the date the note shows. */
+const CA_NOTE_TEXT = "Orders that contain creatine can't ship to California addresses.";
+const CA_NOTE_FROM_MS = Date.parse('2027-01-01T08:00:00Z');
+const CA_NOTE_CARDS = ['creatine monohydrate'];          // lower-case ingredient names that get the note
+const CA_TEST_KEY = 'tf_ca_guard_test', CA_TEST_TTL_MS = 24*60*60*1000;
+function caCookieGet(){ try{ const m=new RegExp('(?:^|;\\s*)'+CA_TEST_KEY+'=([^;]*)').exec(String(document.cookie||'')); return m?m[1]:null; }catch(e){ return null; } }
+function caCookieSet(exp){ try{ const sec=String(window.location.protocol)==='https:'?'; Secure':''; document.cookie=CA_TEST_KEY+'='+exp+'; expires='+new Date(exp).toUTCString()+'; path=/; SameSite=Lax'+sec; }catch(e){} }
+function caFlagClear(){ try{ window.localStorage.removeItem(CA_TEST_KEY); }catch(e){} try{ document.cookie=CA_TEST_KEY+'=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax'; }catch(e){} }
+function caValidExpiry(v){ if(v==null||!/^\d{10,15}$/.test(String(v))) return false; const exp=Number(v), now=Date.now(); return exp>now && exp-now<=CA_TEST_TTL_MS+60000; }
+function caTestModeOn(){
+  try{
+    const vals=[]; let stale=false, v;
+    try{ v=window.localStorage.getItem(CA_TEST_KEY); if(v!=null) vals.push(v); }catch(e){}
+    v=caCookieGet(); if(v!=null) vals.push(v);
+    let on=false; vals.forEach(x=>{ if(caValidExpiry(x)) on=true; else stale=true; });
+    if(!on && stale) caFlagClear();
+    return on;
+  }catch(e){ return false; }
+}
+function caHandleTestParam(){
+  try{
+    const m=/[?&]tf_ca_guard_test=([^&#]*)/.exec(String(window.location.search||'')); if(!m) return;
+    if(m[1]==='0'){ caFlagClear(); return; }
+    if(m[1]!=='1') return;
+    const exp=Date.now()+CA_TEST_TTL_MS, want=String(exp); let wrote=false;
+    try{ window.localStorage.setItem(CA_TEST_KEY,want); wrote=window.localStorage.getItem(CA_TEST_KEY)===want; }catch(e){}
+    if(!wrote){ caCookieSet(exp); wrote=caCookieGet()===want; }
+  }catch(e){}
+}
+function caNoteHTML(ing){
+  try{
+    if(!CA_NOTE_CARDS.includes(String(ing.name||'').trim().toLowerCase())) return '';
+    const past = Date.now() >= CA_NOTE_FROM_MS;
+    const test = !past && caTestModeOn();
+    if(!past && !test) return '';
+    return (test?'<div class="ca-note-test" style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#b45309;margin-top:8px">TEST MODE</div>':'')
+      + `<div class="ca-note" role="note" style="font-size:13px;line-height:1.4;color:var(--muted);margin-top:${test?'2px':'8px'}">${esc(CA_NOTE_TEXT)}</div>`;
+  }catch(e){ return ''; }
+}
 
 /* ---------- helpers ---------- */
 const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -977,6 +1024,7 @@ function cardHTML(ing){
     <div class="check">✓</div>
     <div class="top"><div><h4>${esc(ing.name)}</h4></div><button class="add">${sel?'Added ✓':'Add'}</button></div>
     <div class="blurb">${esc(ing.blurb)}</div>
+    ${caNoteHTML(ing)}
     <div class="range">Dose range ${fmtDose(ing.min)} – ${fmtDose(ing.max)}</div>
     <div class="editor">
       <div class="dose-row"><span class="lbl">Your dose</span><span class="dose-val">—</span></div>
@@ -1246,6 +1294,7 @@ function doSavePreset(){
 /* ---------- init ---------- */
 document.addEventListener('DOMContentLoaded', function(){
   if(!$id('tf-builder')) return;                       // not on the builder page
+  caHandleTestParam();                                 // ?tf_ca_guard_test=1/0 preview flag
   INGREDIENTS=readIngredients(); FLAVORS=readFlavors(); PRESETS=readPresets();
   byName=Object.fromEntries(INGREDIENTS.map(i=>[i.name,i]));
   const s=$id('search'); if(s) s.placeholder=`Search ${INGREDIENTS.length} ingredients — caffeine, creatine, magnesium…`;
