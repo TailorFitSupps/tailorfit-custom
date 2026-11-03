@@ -1154,9 +1154,18 @@ function isCustomCartItem(it){
 /* ---------- cart (#5 weight + #6 name/code + HMAC sign; no item_category) ---------- */
 const SIGN_CART_TIMEOUT_MS = 8000;
 
+/**
+ * Round money to 2 decimals via integer cents. Must match userpresets
+ * foxy-sign-cart `formatPrice` exactly — do not use Number#toFixed alone
+ * (half-cent ties disagree with Math.round(n*100)/100).
+ */
+function formatCartPrice(amount){
+  return (Math.round(Number(amount) * 100) / 100).toFixed(2);
+}
+
 function buildCartParams(){
   // Display / unsigned fallback only. Server recomputes price+weight for signing.
-  const price=(calcPrice(pricedItems())+flavorPrice()).toFixed(2);
+  const price=formatCartPrice(calcPrice(pricedItems())+flavorPrice());
   const params={
     cart:'add',
     name:cartProductName(),
@@ -1178,14 +1187,13 @@ function buildUnsignedCartUrl(params){
 
 function buildSignPayload(){
   // Never send price for signing — Netlify recomputes from catalog + same formula.
+  // displayPrice uses formatCartPrice so it matches server formatPrice (no ±0.01 fudge).
   return {
     build:{
       ingredients:selected.map(s=>({name:s.name,dosage:s.dosage})),
       flavor,
-      // Optional sanity check only; server rejects mismatches and never signs this value.
-      displayPrice:(calcPrice(pricedItems())+flavorPrice()).toFixed(2),
+      displayPrice:formatCartPrice(calcPrice(pricedItems())+flavorPrice()),
     },
-    cartUrl:FOXY_CART_URL,
   };
 }
 
@@ -1266,10 +1274,11 @@ function updateStats(){
   const ss=$id('servingSize'); if(ss) ss.textContent=fmtDose(servingSize());
   const cal=$id('calories'); if(cal) cal.textContent=calcCalories();
   const price = n ? calcPrice(pricedItems()) + flavorPrice() : 0;
-  const sub=$id('subtotal'); if(sub) sub.textContent=`$${price.toFixed(2)}`;
-  const per=$id('perServ'); if(per) per.textContent = n ? `$${(price/SERVINGS).toFixed(2)} / serving` : '—';
+  const priceShown = n ? formatCartPrice(price) : '0.00';
+  const sub=$id('subtotal'); if(sub) sub.textContent=`$${priceShown}`;
+  const per=$id('perServ'); if(per) per.textContent = n ? `$${formatCartPrice(price/SERVINGS)} / serving` : '—';
   const ok=n>=3 && !!flavor, btn=$id('addCart');
-  if(btn){ btn.disabled=!ok; btn.textContent = ok ? `Add to Cart · $${price.toFixed(2)}` : (n<3?'Add 3+ ingredients':'Choose a flavor'); }
+  if(btn){ btn.disabled=!ok; btn.textContent = ok ? `Add to Cart · $${priceShown}` : (n<3?'Add 3+ ingredients':'Choose a flavor'); }
   const fc=$id('fabCount'); if(fc){ fc.style.display=n?'inline-flex':'none'; fc.textContent=n; }
   const dc=$id('doneCatalog'); if(dc) dc.textContent = n?`Done · ${n} in blend`:'Done';
   // renderTaste();  // ⛔ taste/flavor profile disabled — calc accuracy TBD, re-enable later
