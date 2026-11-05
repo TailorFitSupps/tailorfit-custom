@@ -17,10 +17,17 @@ const FOXY_PORTAL_SETTINGS_URL = 'https://tailorfit.foxycart.com/customer_portal
 const FOXY_PORTAL_BASE_URL = 'https://tailorfit.foxycart.com/s/customer/';
 const FOXY_SSO_FUNCTION_URL = 'https://userpresets.netlify.app/.netlify/functions/foxy-sso';
 const FOXY_LAST_ORDER_FUNCTION_URL = 'https://userpresets.netlify.app/.netlify/functions/foxy-last-order';
+// HMAC cart signing (secret stays on Netlify). Falls back to unsigned links if unavailable.
+const FOXY_SIGN_CART_FUNCTION_URL = 'https://userpresets.netlify.app/.netlify/functions/foxy-sign-cart';
+const FOXY_CART_URL = 'https://tailorfit.foxycart.com/cart';
 
 const SERVINGS = 30; // servings per tub: converts per-serving dosage -> total powder weight
 const GRAMS_PER_LB = 453.59237; // Foxy weight_uom is LBS
-/** Empty pouch/tub + label (grams). Placeholder — Bret still needs to confirm the real empty-container weight. */
+/**
+ * Empty pouch/tub + label (grams). Placeholder — Bret still needs to confirm the real empty-container weight.
+ * SYNC: must match UserPresets `netlify/functions/foxy-sign-cart.js` PACKAGING_GRAMS (dual copy; no shared package).
+ * See tests/PACKAGING_GRAMS.sync.md in both repos. Change both in the same release / tag+function deploy.
+ */
 const PACKAGING_GRAMS = 21;
 
 // Cart line identity for custom builds. Customer-facing only — never encode
@@ -1148,21 +1155,95 @@ function isCustomCartItem(it){
   return n==='Custom' || n===CART_PRODUCT_NAME_BASE || n.startsWith(CART_PRODUCT_NAME_BASE+' · ');
 }
 
-/* ---------- cart (name/code from #6 + weight from #5; no item_category) ---------- */
-function addToCart(){
+/* ---------- cart (#5 weight + #6 name/code + HMAC sign; no item_category) ---------- */
+const SIGN_CART_TIMEOUT_MS = 8000;
+
+/**
+ * Round money to 2 decimals via integer cents. Must match userpresets
+ * foxy-sign-cart `formatPrice` exactly — do not use Number#toFixed alone
+ * (half-cent ties disagree with Math.round(n*100)/100).
+ */
+function formatCartPrice(amount){
+  return (Math.round(Number(amount) * 100) / 100).toFixed(2);
+}
+
+function buildCartParams(){
+  // Display / unsigned fallback only. Server recomputes price+weight for signing.
+  const price=formatCartPrice(calcPrice(pricedItems())+flavorPrice());
+  const params={
+    cart:'add',
+    name:cartProductName(),
+    code:cartProductCode(),
+    price,
+    weight:String(cartWeightLb()),
+    quantity:'1',
+  };
+  // Omit item_category (visible custom option). Shipping stays Foxy DEFAULT.
+  selected.forEach((s,i)=>{ params[`Ingredient${i+1}`]=`${s.name} - ${fmtDose(s.dosage)}`; });
+  params.Flavor=flavor;
+  return params;
+}
+
+function buildUnsignedCartUrl(params){
+  const q=Object.entries(params).map(([k,v])=>`${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
+  return `${FOXY_CART_URL}?${q}`;
+}
+
+function buildSignPayload(){
+  // Never send price for signing — Netlify recomputes from catalog + same formula.
+  // displayPrice uses formatCartPrice so it matches server formatPrice (no ±0.01 fudge).
+  return {
+    build:{
+      ingredients:selected.map(s=>({name:s.name,dosage:s.dosage})),
+      flavor,
+      displayPrice:formatCartPrice(calcPrice(pricedItems())+flavorPrice()),
+    },
+  };
+}
+
+async function fetchSignedCartUrl(){
+  const ctrl=typeof AbortController!=='undefined' ? new AbortController() : null;
+  const timer=ctrl ? setTimeout(()=>ctrl.abort(), SIGN_CART_TIMEOUT_MS) : null;
+  try{
+    const res=await fetch(FOXY_SIGN_CART_FUNCTION_URL,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(buildSignPayload()),
+      signal:ctrl ? ctrl.signal : undefined,
+    });
+    if(!res.ok) throw new Error(`sign-cart HTTP ${res.status}`);
+    const data=await res.json();
+    if(!data?.success || !data?.url) throw new Error(data?.error || 'sign-cart failed');
+    return data.url;
+  }finally{
+    if(timer) clearTimeout(timer);
+  }
+}
+
+function restoreAddCartButton(){
+  // Re-enable after sign failure / bfcache back-navigation.
+  updateStats();
+}
+
+async function addToCart(){
   if(selected.length<3 || !flavor){ toast(selected.length<3?'Add at least 3 ingredients':'Choose a flavor'); return; }
-  const price=(calcPrice(pricedItems())+flavorPrice()).toFixed(2);
-  const name=cartProductName();
-  const code=cartProductCode();
-  const weight=cartWeightLb();
-  // Omit item_category: Foxy treats it as a visible custom option ("item category:
-  // Default for all products"). Do not send category=Default for all products either
-  // (invalid code). Shipping falls to Foxy DEFAULT, same as today.
-  let url=`https://tailorfit.foxycart.com/cart?cart=add&name=${encodeURIComponent(name)}&code=${encodeURIComponent(code)}&price=${price}&weight=${weight}&quantity=1`;
-  selected.forEach((s,i)=>{ url+=`&Ingredient${i+1}=${encodeURIComponent(`${s.name} - ${fmtDose(s.dosage)}`)}`; });
-  url+=`&Flavor=${encodeURIComponent(flavor)}`;
+  const btn=$id('addCart');
+  if(btn) btn.disabled=true;
+  const params=buildCartParams();
+  let url=buildUnsignedCartUrl(params);
+  try{
+    url=await fetchSignedCartUrl();
+  }catch(err){
+    // Signing best-effort while tampering prevention stays OFF.
+    // Quiet unsigned fallback — no customer toast (Bret).
+    console.warn('HMAC cart signing unavailable; using unsigned cart link', err);
+    restoreAddCartButton();
+  }
   window.location.href=url;
 }
+
+// bfcache: Back from Foxy can restore a disabled Add to Cart button.
+window.addEventListener('pageshow', ()=>{ restoreAddCartButton(); });
 
 /* ---------- toast + drawer ---------- */
 function toast(msg){ const wrap=$id('toasts'); if(!wrap) return; const t=document.createElement('div'); t.className='toast'; t.innerHTML=`<span class="ic">✓</span>${esc(msg)}`; wrap.appendChild(t); setTimeout(()=>t.remove(),2800); }
@@ -1196,10 +1277,11 @@ function updateStats(){
   const ss=$id('servingSize'); if(ss) ss.textContent=fmtDose(servingSize());
   const cal=$id('calories'); if(cal) cal.textContent=calcCalories();
   const price = n ? calcPrice(pricedItems()) + flavorPrice() : 0;
-  const sub=$id('subtotal'); if(sub) sub.textContent=`$${price.toFixed(2)}`;
-  const per=$id('perServ'); if(per) per.textContent = n ? `$${(price/SERVINGS).toFixed(2)} / serving` : '—';
+  const priceShown = n ? formatCartPrice(price) : '0.00';
+  const sub=$id('subtotal'); if(sub) sub.textContent=`$${priceShown}`;
+  const per=$id('perServ'); if(per) per.textContent = n ? `$${formatCartPrice(price/SERVINGS)} / serving` : '—';
   const ok=n>=3 && !!flavor, btn=$id('addCart');
-  if(btn){ btn.disabled=!ok; btn.textContent = ok ? `Add to Cart · $${price.toFixed(2)}` : (n<3?'Add 3+ ingredients':'Choose a flavor'); }
+  if(btn){ btn.disabled=!ok; btn.textContent = ok ? `Add to Cart · $${priceShown}` : (n<3?'Add 3+ ingredients':'Choose a flavor'); }
   const fc=$id('fabCount'); if(fc){ fc.style.display=n?'inline-flex':'none'; fc.textContent=n; }
   const dc=$id('doneCatalog'); if(dc) dc.textContent = n?`Done · ${n} in blend`:'Done';
   // renderTaste();  // ⛔ taste/flavor profile disabled — calc accuracy TBD, re-enable later
