@@ -1157,9 +1157,6 @@ function isCustomCartItem(it){
 
 /* ---------- cart (#5 weight + #6 name/code + HMAC sign; no item_category) ---------- */
 const SIGN_CART_TIMEOUT_MS = 8000;
-// Single constant so Bret can change the unsigned-fallback toast without hunting.
-const CART_SIGNING_UNAVAILABLE_TOAST =
-  'Cart signing unavailable — continuing with standard cart link';
 
 /**
  * Round money to 2 decimals via integer cents. Must match userpresets
@@ -1238,9 +1235,8 @@ async function addToCart(){
     url=await fetchSignedCartUrl();
   }catch(err){
     // Signing best-effort while tampering prevention stays OFF.
-    // Keep unsigned fallback so cart still works if the function/env is down.
+    // Quiet unsigned fallback — no customer toast (Bret).
     console.warn('HMAC cart signing unavailable; using unsigned cart link', err);
-    toast(CART_SIGNING_UNAVAILABLE_TOAST);
     restoreAddCartButton();
   }
   window.location.href=url;
