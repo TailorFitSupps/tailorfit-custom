@@ -24,3 +24,5 @@
 
 # Impeccable engine binary: launcher downloads + sha256-verifies it into ~/.impeccable/bin/<version>/
 .cursor/skills/impeccable/scripts/bin/
+
+node_modules/
