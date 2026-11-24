@@ -1,0 +1,10 @@
+{
+  "name": "tailorfit-custom",
+  "private": true,
+  "scripts": {
+    "test": "node tests/golden-cart-price.test.js && node tests/cart-sign-failure.test.js && node tests/search-and-edit-target.test.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.0"
+  }
+}

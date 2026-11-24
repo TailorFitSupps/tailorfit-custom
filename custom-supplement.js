@@ -867,6 +867,8 @@ function caNoteHTML(ing){
 const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const cssEsc = s => (window.CSS && CSS.escape) ? CSS.escape(s) : String(s).replace(/["\\]/g,'\\$&');
 const $id = id => document.getElementById(id);
+/** The builder's ingredient search box (scoped to #tf-builder; see init). */
+const searchInput = () => document.querySelector('#tf-builder #search');
 function fmtDose(g){ g = parseFloat(g)||0; return g<1 ? `${Math.round(g*1000)}mg` : `${g.toFixed(2)}g`; }
 
 /* ---------- CMS readers (no hardcoding) ---------- */
@@ -1252,8 +1254,8 @@ function injectBlendCSS(){
   s.textContent=`
     #tf-builder .bl-item{flex-direction:column;align-items:stretch}
     #tf-builder .bl-row{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%}
-    #tf-builder .bl-actions{display:flex;align-items:center;gap:2px}
-    #tf-builder .bl-item .edit{border:none;background:transparent;color:var(--muted);font-size:13px;line-height:1;padding:2px 6px;border-radius:6px;cursor:pointer}
+    #tf-builder .bl-actions{display:flex;align-items:center;gap:8px}
+    #tf-builder .bl-item .edit{border:none;background:transparent;color:var(--muted);font-size:13px;line-height:1;padding:0 6px;min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;cursor:pointer}
     #tf-builder .bl-item .edit:hover{color:var(--teal);background:var(--panel-hi)}
     #tf-builder .bl-item .edit.active{color:var(--teal)}
     #tf-builder .bl-editor{display:none;padding-top:10px;margin-top:8px;border-top:1px dashed var(--line)}
@@ -1420,10 +1422,12 @@ document.addEventListener('DOMContentLoaded', function(){
   caHandleTestParam();                                 // ?tf_ca_guard_test=1/0 preview flag
   INGREDIENTS=readIngredients(); FLAVORS=readFlavors(); PRESETS=readPresets();
   byName=Object.fromEntries(INGREDIENTS.map(i=>[i.name,i]));
-  const s=$id('search'); if(s) s.placeholder=`Search ${INGREDIENTS.length} ingredients — caffeine, creatine, magnesium…`;
+  // Foxy's customer portal appends <iron-iconset-svg> (with <g id="search">) to <head>
+  // before DOMContentLoaded, so getElementById('search') is that SVG group, not this input.
+  const s=searchInput(); if(s){ s.placeholder=`Search ${INGREDIENTS.length} ingredients — caffeine, creatine, magnesium…`; s.setAttribute('enterkeyhint','search'); s.setAttribute('autocomplete','off'); }
   renderPresets(); renderFlavors(); renderCatalog(); renderSummary();
 
-  $id('search')?.addEventListener('input', e=>{ search=e.target.value.toLowerCase().trim(); renderCatalog(); });
+  s?.addEventListener('input', e=>{ search=e.target.value.toLowerCase().trim(); renderCatalog(); });
   document.querySelectorAll('#chips .chip').forEach(c=>c.addEventListener('click',()=>{ document.querySelectorAll('#chips .chip').forEach(x=>x.classList.remove('active')); c.classList.add('active'); activeFilter=c.dataset.f; renderCatalog(); }));
   $id('addCart')?.addEventListener('click', addToCart);
   $id('openCatalog')?.addEventListener('click', openDrawer);
